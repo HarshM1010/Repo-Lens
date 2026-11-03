@@ -1,0 +1,416 @@
+{% extends 'base.html' %}
+
+{% block title %}Report: {{ job.repository.name }} - RepoLens{% endblock %}
+
+{% block extra_head %}
+<style>
+    .metric-card {
+        border-left: 4px solid #6366f1;
+    }
+    .security-gauge {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 1.75rem;
+    }
+    .security-A { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 4px solid #10b981; }
+    .security-B { background: rgba(6, 182, 212, 0.1); color: #06b6d4; border: 4px solid #06b6d4; }
+    .security-C { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 4px solid #f59e0b; }
+    .security-D { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 4px solid #ef4444; }
+    
+    .nav-tabs .nav-link {
+        color: var(--text-muted);
+        border: none;
+        padding: 1rem 1.5rem;
+        font-weight: 600;
+    }
+    .nav-tabs .nav-link.active {
+        color: #fff;
+        background-color: var(--bg-card);
+        border-bottom: 3px solid #6366f1;
+    }
+    .tab-content {
+        background-color: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-top: none;
+        border-bottom-left-radius: 12px;
+        border-bottom-right-radius: 12px;
+        padding: 2rem;
+    }
+    .file-tree ul {
+        list-style-type: none;
+        padding-left: 1.5rem;
+    }
+    .file-tree li {
+        margin: 0.25rem 0;
+        position: relative;
+    }
+    .file-tree li::before {
+        content: "";
+        position: absolute;
+        left: -12px;
+        top: 10px;
+        width: 10px;
+        height: 1px;
+        background-color: var(--border-color);
+    }
+    .file-tree li::after {
+        content: "";
+        position: absolute;
+        left: -12px;
+        top: 0;
+        width: 1px;
+        height: 20px;
+        background-color: var(--border-color);
+    }
+    .file-tree li:last-child::after {
+        height: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
+        <div>
+            <div class="d-flex align-items-center gap-2">
+                <h1 class="h2 text-white font-weight-bold mb-0">{{ job.repository.name }}</h1>
+                <span class="badge bg-dark border border-secondary text-gradient-cyan">Commit: {{ job.commit_hash|slice:":7" }}</span>
+            </div>
+            <a href="{{ job.repository.url }}" target="_blank" class="small text-muted text-decoration-none"><i class="bi bi-github"></i> {{ job.repository.url }}</a>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'download_markdown' job.id %}" class="btn btn-outline-light px-3 rounded-pill btn-sm">
+                <i class="bi bi-filetype-md me-1"></i> Download Docs
+            </a>
+            {% if report.minio_archive_path %}
+                <a href="{{ report.minio_archive_path }}" class="btn btn-outline-cyan px-3 rounded-pill btn-sm">
+                    <i class="bi bi-file-zip-fill me-1"></i> Download ZIP
+                </a>
+            {% endif %}
+            <a href="{% url 'reanalyze' job.id %}" class="btn btn-outline-warning px-3 rounded-pill btn-sm">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Re-analyze
+            </a>
+            <a href="{% url 'delete_analysis' job.id %}" class="btn btn-outline-danger px-3 rounded-pill btn-sm" onclick="return confirm('Are you sure you want to delete this analysis report?');">
+                <i class="bi bi-trash-fill me-1"></i> Delete
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation Header -->
+<ul class="nav nav-tabs border-secondary bg-darker rounded-top-4" id="reportTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button" role="tab" aria-controls="overview" aria-selected="true">
+            <i class="bi bi-info-circle me-1"></i> Overview
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="metrics-tab" data-bs-toggle="tab" data-bs-target="#metrics" type="button" role="tab" aria-controls="metrics" aria-selected="false">
+            <i class="bi bi-bar-chart-line me-1"></i> Metrics
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="graph-tab" data-bs-toggle="tab" data-bs-target="#graph" type="button" role="tab" aria-controls="graph" aria-selected="false">
+            <i class="bi bi-diagram-3 me-1"></i> Dependency Graph
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#security" type="button" role="tab" aria-controls="security" aria-selected="false">
+            <i class="bi bi-shield-lock me-1"></i> Security Scan
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="aidoc-tab" data-bs-toggle="tab" data-bs-target="#aidoc" type="button" role="tab" aria-controls="aidoc" aria-selected="false">
+            <i class="bi bi-magic me-1"></i> AI Documentation
+        </button>
+    </li>
+</ul>
+
+<!-- Tab Contents -->
+<div class="tab-content border-secondary shadow-lg">
+    
+    <!-- OVERVIEW TAB -->
+    <div class="tab-pane fade show active" id="overview" role="tabpanel" aria-labelledby="overview-tab">
+        <div class="row g-4">
+            <div class="col-md-6">
+                <h4 class="text-white mb-4">Codebase Language Details</h4>
+                <div style="max-height: 250px; position: relative;" class="mb-4">
+                    <canvas id="languageChart"></canvas>
+                </div>
+                <div class="mt-4">
+                    <h5 class="text-muted">Repository Metadata</h5>
+                    <ul class="list-group list-group-flush list-group-dark">
+                        <li class="list-group-item bg-transparent text-white border-secondary px-0 d-flex justify-content-between">
+                            <span>Main Language:</span><strong class="text-gradient-cyan">{{ report.language }}</strong>
+                        </li>
+                        <li class="list-group-item bg-transparent text-white border-secondary px-0 d-flex justify-content-between">
+                            <span>Total Cloned Size:</span><strong>{{ project_summary.total_size_human }}</strong>
+                        </li>
+                        <li class="list-group-item bg-transparent text-white border-secondary px-0 d-flex justify-content-between">
+                            <span>Total Files Indexed:</span><strong>{{ project_summary.total_files }}</strong>
+                        </li>
+                        <li class="list-group-item bg-transparent text-white border-secondary px-0 d-flex justify-content-between">
+                            <span>Analysis Time:</span><strong>{{ job.duration_seconds }} seconds</strong>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-6 border-start border-secondary">
+                <h4 class="text-white mb-4">Project File Structure</h4>
+                <div class="card bg-dark border-secondary p-3" style="max-height: 400px; overflow-y: auto;">
+                    <div class="file-tree text-white">
+                        <i class="bi bi-folder-fill text-warning me-1"></i> {{ job.repository.name }}
+                        {% include 'analysis/partials/structure_node.html' with node=project_summary.structure %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- METRICS TAB -->
+    <div class="tab-pane fade" id="metrics" role="tabpanel" aria-labelledby="metrics-tab">
+        <div class="row g-4 mb-4">
+            <div class="col-md-4">
+                <div class="card p-3 border-secondary metric-card">
+                    <div class="text-muted small">LINES OF CODE (LOC)</div>
+                    <div class="h2 font-weight-bold text-white mt-1">{{ static_metrics.loc }}</div>
+                    <div class="small text-muted">Excluding blank & comments</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card p-3 border-secondary metric-card" style="border-left-color: #06b6d4;">
+                    <div class="text-muted small">COMPLEXITY SCORE</div>
+                    <div class="h2 font-weight-bold text-white mt-1">{{ static_metrics.cyclomatic_complexity }}</div>
+                    <div class="small text-muted">Avg McCabe Cyclomatic Index</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card p-3 border-secondary metric-card" style="border-left-color: #10b981;">
+                    <div class="text-muted small">MAINTAINABILITY INDEX</div>
+                    <div class="h2 font-weight-bold text-white mt-1">{{ static_metrics.maintainability_index }}</div>
+                    <div class="small text-muted">Radon grade: <strong class="text-success">{{ static_metrics.maintainability_grade }}</strong></div>
+                </div>
+            </div>
+        </div>
+        <div class="row g-4">
+            <div class="col-md-7">
+                <h4 class="text-white mb-3">Complexity Summary</h4>
+                <p class="text-muted small">Below is the breakdown of functions, classes, and code sizes. Codebases with lower maintainability index (below 50) are recommended to be refactored.</p>
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped border-secondary">
+                        <tbody>
+                            <tr><td>Functions Count</td><td><strong>{{ static_metrics.functions }}</strong></td></tr>
+                            <tr><td>Classes Count</td><td><strong>{{ static_metrics.classes }}</strong></td></tr>
+                            <tr><td>Largest Source File</td><td><code class="small text-gradient-cyan">{{ static_metrics.largest_file }}</code></td></tr>
+                            <tr><td>Complexity Grade</td><td><span class="badge bg-dark border border-secondary">{{ static_metrics.maintainability_grade }} (Excellent)</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="col-md-5">
+                <h4 class="text-white mb-3">Dependencies Extracted</h4>
+                <div class="card bg-dark border-secondary" style="max-height: 250px; overflow-y: auto;">
+                    {% if dependency_list %}
+                        <ul class="list-group list-group-flush list-group-dark">
+                            {% for dep in dependency_list %}
+                                <li class="list-group-item bg-transparent text-white border-secondary d-flex justify-content-between py-2">
+                                    <span><i class="bi bi-box-seam me-2 text-gradient-cyan"></i>{{ dep.name }}</span>
+                                    <span class="badge bg-secondary">{{ dep.version }} ({{ dep.manager }})</span>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <div class="text-center py-5 text-muted">
+                            <i class="bi bi-box-seam fs-2 d-block mb-1"></i> No library dependencies detected.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- DEPENDENCY GRAPH TAB -->
+    <div class="tab-pane fade" id="graph" role="tabpanel" aria-labelledby="graph-tab">
+        <h4 class="text-white mb-2">Interactive Code Dependency Graph</h4>
+        <p class="text-muted small">This graph maps file-to-file relationships and external import dependencies. Use mouse wheel to zoom, click and drag to pan.</p>
+        <div id="dependency-graph-container"></div>
+    </div>
+    
+    <!-- SECURITY SCAN TAB -->
+    <div class="tab-pane fade" id="security" role="tabpanel" aria-labelledby="security-tab">
+        <div class="row g-4 mb-4">
+            <div class="col-md-4 d-flex justify-content-center align-items-center">
+                <div class="text-center">
+                    <div class="security-gauge {% if security_report.security_score >= 80 %}security-A{% elif security_report.security_score >= 60 %}security-B{% elif security_report.security_score >= 40 %}security-C{% else %}security-D{% endif %} mx-auto">
+                        {{ security_report.security_score }}
+                    </div>
+                    <div class="mt-3 text-white fw-bold">Security Score</div>
+                    <p class="text-muted small mt-1">Based on secrets & vulnerability findings</p>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <h4 class="text-white">Security Vulnerability Details</h4>
+                <div class="row g-2 mt-2 mb-4">
+                    <div class="col-6">
+                        <div class="p-3 bg-dark border border-secondary rounded">
+                            <div class="text-muted small">Hardcoded Secrets</div>
+                            <div class="h4 font-weight-bold text-white mb-0 mt-1">{{ security_report.secrets_count }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 bg-dark border border-secondary rounded">
+                            <div class="text-muted small">Dangerous Functions</div>
+                            <div class="h4 font-weight-bold text-white mb-0 mt-1">{{ security_report.dangerous_func_count }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="text-white mb-3">Vulnerability Log</h4>
+        <div class="table-responsive">
+            <table class="table table-hover table-dark border-secondary">
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Type</th>
+                        <th>File / Line</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if security_report.vulnerabilities %}
+                        {% for issue in security_report.vulnerabilities %}
+                            <tr>
+                                <td>
+                                    <span class="badge {% if issue.severity == 'Critical' or issue.severity == 'High' %}bg-danger{% elif issue.severity == 'Medium' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        {{ issue.severity }}
+                                    </span>
+                                </td>
+                                <td class="text-white">{{ issue.type }}</td>
+                                <td><code class="small text-gradient-cyan">{{ issue.file }}:{{ issue.line }}</code></td>
+                                <td class="small text-muted">{{ issue.description }}</td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center py-5 text-muted">
+                                <i class="bi bi-shield-check fs-2 text-success d-block mb-2"></i>
+                                Excellent! No hardcoded secrets or dangerous functions were detected.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- AI DOCUMENTATION TAB -->
+    <div class="tab-pane fade" id="aidoc" role="tabpanel" aria-labelledby="aidoc-tab">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="text-white mb-0">AI-Generated Project Blueprint</h4>
+            <a href="{% url 'download_markdown' job.id %}" class="btn btn-sm btn-primary-gradient px-4 rounded-pill">
+                <i class="bi bi-file-earmark-arrow-down-fill"></i> Download Markdown
+            </a>
+        </div>
+        <hr class="border-secondary mb-4">
+        <div class="text-white p-3 bg-darker rounded border border-secondary shadow-inner markdown-body">
+            {{ ai_documentation_html|safe }}
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // 1. Language doughnut Chart
+    const langData = {{ project_summary.percentages|safe }};
+    const labels = Object.keys(langData);
+    const data = Object.values(langData);
+
+    const ctx = document.getElementById('languageChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: [
+                    '#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#475569'
+                ],
+                borderWidth: 1,
+                borderColor: '#1e293b'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: '#94a3b8'
+                    }
+                }
+            }
+        }
+    });
+
+    // 2. Interactive Dependency Graph using Vis.js
+    const graphData = {{ dependency_graph|safe }};
+    if (graphData && graphData.nodes && graphData.nodes.length > 0) {
+        const container = document.getElementById('dependency-graph-container');
+        const dataVis = {
+            nodes: new vis.DataSet(graphData.nodes),
+            edges: new vis.DataSet(graphData.edges)
+        };
+        const optionsVis = {
+            nodes: {
+                font: {
+                    color: '#f8fafc',
+                    size: 12
+                },
+                borderWidth: 2,
+                shadow: true
+            },
+            edges: {
+                color: {
+                    color: '#334155',
+                    highlight: '#6366f1'
+                },
+                width: 1.5,
+                smooth: {
+                    type: 'continuous'
+                }
+            },
+            physics: {
+                stabilization: true,
+                barnesHut: {
+                    gravitationalConstant: -2000,
+                    centralGravity: 0.3,
+                    springLength: 95
+                }
+            },
+            interaction: {
+                hover: true,
+                zoomView: true,
+                dragView: true
+            }
+        };
+        const network = new vis.Network(container, dataVis, optionsVis);
+    } else {
+        document.getElementById('dependency-graph-container').innerHTML = `
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-diagram-3 fs-1 d-block mb-2"></i>
+                No import dependencies could be mapped for this project.
+            </div>
+        `;
+    }
+</script>
+{% endblock %}

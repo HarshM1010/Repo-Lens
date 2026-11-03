@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block title %}Analyzing... - RepoLens{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center py-4">
+    <div class="col-md-10 col-lg-8">
+        
+        <!-- Job Details card -->
+        <div class="card border-secondary shadow-lg mb-4">
+            <div class="card-header border-secondary bg-dark d-flex justify-content-between align-items-center py-3">
+                <div>
+                    <h5 class="text-white mb-0" id="repo-title">Analyzing: {{ job.repository.name }}</h5>
+                    <a href="{{ job.repository.url }}" target="_blank" class="small text-muted text-decoration-none"><i class="bi bi-github"></i> {{ job.repository.url }}</a>
+                </div>
+                <div>
+                    <span id="job-status-badge" class="badge-status {% if job.status == 'PENDING' %}badge-pending{% elif job.status == 'RUNNING' %}badge-running{% elif job.status == 'COMPLETED' %}badge-completed{% else %}badge-failed{% endif %}">
+                        {{ job.status }}
+                    </span>
+                </div>
+            </div>
+            <div class="card-body p-4">
+                
+                <!-- Progress display -->
+                <div class="text-center mb-4">
+                    <h3 class="text-white" id="current-stage-title">{{ job.get_current_stage_display }}</h3>
+                    <p class="text-muted small">Please do not close this window. Workers are processing code metrics asynchronously.</p>
+                </div>
+
+                <!-- Animated Progress Bar -->
+                <div class="progress bg-dark border-secondary mb-4" style="height: 24px; border: 1px solid var(--border-color); border-radius: 9999px;">
+                    <div id="progress-bar-fill" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                         role="progressbar" style="width: {{ job.progress }}%; background: var(--primary-gradient) !important;" 
+                         aria-valuenow="{{ job.progress }}" aria-valuemin="0" aria-valuemax="100">
+                        <span id="progress-text" class="fw-bold">{{ job.progress }}%</span>
+                    </div>
+                </div>
+
+                <!-- Live stats -->
+                <div class="row g-3 text-center mb-2">
+                    <div class="col-4">
+                        <div class="p-3 bg-dark border border-secondary rounded">
+                            <div class="text-muted small mb-1">DURATION</div>
+                            <div class="h5 font-weight-bold text-white mb-0" id="duration-val">{{ job.duration_seconds }}s</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-3 bg-dark border border-secondary rounded">
+                            <div class="text-muted small mb-1">RETRIES</div>
+                            <div class="h5 font-weight-bold text-white mb-0" id="retry-val">{{ job.retry_count }}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="p-3 bg-dark border border-secondary rounded">
+                            <div class="text-muted small mb-1">ASSIGNED WORKER</div>
+                            <div class="h5 font-weight-bold text-white mb-0 text-truncate" id="worker-val" title="{{ job.worker_assigned }}">{{ job.worker_assigned|default:"Allocating..." }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error Alert Box -->
+                <div id="error-alert" class="alert alert-danger border-0 shadow mt-4 {% if not job.error_message %}d-none{% endif %}" role="alert">
+                    <h5 class="alert-heading"><i class="bi bi-x-circle-fill me-2"></i>Analysis Pipeline Failed</h5>
+                    <p class="mb-0" id="error-text">{{ job.error_message }}</p>
+                </div>
+
+                <!-- Success Button Lock -->
+                <div id="success-action" class="text-center mt-4 {% if job.status != 'COMPLETED' %}d-none{% endif %}">
+                    <a href="{% url 'analysis_detail' job.id %}" class="btn btn-primary-gradient px-5 py-3 rounded-pill btn-lg shadow-lg">
+                        View Repository Analysis Report <i class="bi bi-arrow-right ms-2"></i>
+                    </a>
+                </div>
+
+                <!-- Failed Button Lock -->
+                <div id="failed-action" class="text-center mt-4 {% if job.status != 'FAILED' %}d-none{% endif %}">
+                    <a href="{% url 'reanalyze' job.id %}" class="btn btn-outline-warning px-5 py-3 rounded-pill">
+                        Re-schedule / Retry Task <i class="bi bi-arrow-counterclockwise ms-2"></i>
+                    </a>
+                </div>
+
+            </div>
+        </div>
+        
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const jobId = "{{ job.id }}";
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socketUrl = `${protocol}//${window.location.host}/ws/jobs/${jobId}/`;
+    const jobSocket = new WebSocket(socketUrl);
+
+    let progressTimer = null;
+    let durationSeconds = parseFloat("{{ job.duration_seconds }}");
+    let jobStatus = "{{ job.status }}";
+
+    // Increment duration timer if status is running/pending
+    function startTimer() {
+        if (progressTimer) return;
+        progressTimer = setInterval(() => {
+            if (jobStatus === 'RUNNING' || jobStatus === 'PENDING') {
+                durationSeconds += 1;
+                document.getElementById('duration-val').textContent = durationSeconds.toFixed(1) + 's';
+            }
+        }, 1000);
+    }
+
+    if (jobStatus === 'RUNNING' || jobStatus === 'PENDING') {
+        startTimer();
+    }
+
+    jobSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        jobStatus = data.status;
+        
+        // Update stage & progress
+        document.getElementById('current-stage-title').textContent = data.stage;
+        document.getElementById('progress-bar-fill').style.width = data.progress + '%';
+        document.getElementById('progress-bar-fill').setAttribute('aria-valuenow', data.progress);
+        document.getElementById('progress-text').textContent = data.progress + '%';
+        
+        // Update variables
+        document.getElementById('retry-val').textContent = data.retry_count;
+        document.getElementById('worker-val').textContent = data.worker_assigned || 'worker_node';
+        durationSeconds = data.duration;
+        document.getElementById('duration-val').textContent = durationSeconds.toFixed(1) + 's';
+
+        // Update badge styles
+        const badge = document.getElementById('job-status-badge');
+        badge.textContent = data.status;
+        badge.className = 'badge-status'; // reset
+        if (data.status === 'PENDING') {
+            badge.classList.add('badge-pending');
+        } else if (data.status === 'RUNNING') {
+            badge.classList.add('badge-running');
+            startTimer();
+        } else if (data.status === 'COMPLETED') {
+            badge.classList.add('badge-completed');
+            clearInterval(progressTimer);
+            // Show success action, hide other actions
+            document.getElementById('success-action').classList.remove('d-none');
+            document.getElementById('failed-action').classList.add('d-none');
+            document.getElementById('error-alert').classList.add('d-none');
+            
+            // Auto redirect to report details after 1.5 seconds
+            setTimeout(function() {
+                window.location.href = `{% url 'analysis_detail' job.id %}`;
+            }, 1500);
+        } else if (data.status === 'FAILED') {
+            badge.classList.add('badge-failed');
+            clearInterval(progressTimer);
+            // Show failed action & error alert
+            document.getElementById('failed-action').classList.remove('d-none');
+            document.getElementById('success-action').classList.add('d-none');
+            document.getElementById('error-alert').classList.remove('d-none');
+            document.getElementById('error-text').textContent = data.error_message || "An unexpected Celery execution error occurred.";
+        }
+    };
+
+    jobSocket.onclose = function(e) {
+        console.log('Progress websocket channel disconnected.');
+    };
+</script>
+{% endblock %}

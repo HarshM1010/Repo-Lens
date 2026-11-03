@@ -1,0 +1,12 @@
+<ul>
+    {% for key, val in node.items %}
+        <li>
+            {% if val == "file" %}
+                <i class="bi bi-file-earmark-code text-muted me-1"></i> {{ key }}
+            {% else %}
+                <i class="bi bi-folder2 text-warning me-1"></i> <strong>{{ key }}/</strong>
+                {% include 'analysis/partials/structure_node.html' with node=val %}
+            {% endif %}
+        </li>
+    {% endfor %}
+</ul>

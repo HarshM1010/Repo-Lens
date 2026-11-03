@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - RepoLens{% endblock %}
+
+{% block content %}
+<div id="dashboard-container">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="h2 text-white font-weight-bold">Engine Dashboard</h1>
+                <p class="text-muted">Distributed pipeline metrics and running tasks</p>
+            </div>
+            <div>
+                <button class="btn btn-outline-secondary btn-sm" onclick="window.location.reload();">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh Stats
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="row g-3 mb-4">
+        <!-- Analyzed -->
+        <div class="col-6 col-md-3">
+            <div class="card p-3 border-secondary text-center">
+                <div class="text-muted small mb-1">TOTAL ANALYZED</div>
+                <div class="h3 font-weight-bold text-white">{{ total_analyzed }}</div>
+                <div class="text-gradient-cyan small font-weight-semibold">Repositories</div>
+            </div>
+        </div>
+        <!-- Active Workers -->
+        <div class="col-6 col-md-3">
+            <div class="card p-3 border-secondary text-center">
+                <div class="text-muted small mb-1">WORKER STATUS</div>
+                <div class="h3 font-weight-bold text-white text-truncate" title="{{ worker_status }}">{{ worker_status }}</div>
+                <div class="text-gradient-primary small font-weight-semibold">Celery Pool</div>
+            </div>
+        </div>
+        <!-- Queue / Running -->
+        <div class="col-6 col-md-3">
+            <div class="card p-3 border-secondary text-center">
+                <div class="text-muted small mb-1">ACTIVE / PENDING</div>
+                <div class="h3 font-weight-bold text-white">{{ running_jobs }} / {{ queue_length }}</div>
+                <div class="text-warning small font-weight-semibold">Background Jobs</div>
+            </div>
+        </div>
+        <!-- Average Run -->
+        <div class="col-6 col-md-3">
+            <div class="card p-3 border-secondary text-center">
+                <div class="text-muted small mb-1">AVG ANALYSIS TIME</div>
+                <div class="h3 font-weight-bold text-white">{{ avg_runtime }}s</div>
+                <div class="text-success small font-weight-semibold">Performance</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Breakdown Grid -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-4">
+            <div class="card p-3 border-secondary d-flex flex-row align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small">COMPLETED JOBS</div>
+                    <div class="h4 font-weight-bold text-white mt-1">{{ completed_jobs }}</div>
+                </div>
+                <i class="bi bi-check-circle-fill text-success fs-3"></i>
+            </div>
+        </div>
+        <div class="col-6 col-md-4">
+            <div class="card p-3 border-secondary d-flex flex-row align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small">FAILED JOBS</div>
+                    <div class="h4 font-weight-bold text-white mt-1">{{ failed_jobs }}</div>
+                </div>
+                <i class="bi bi-x-circle-fill text-danger fs-3"></i>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="card p-3 border-secondary d-flex flex-row align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small">Celery Queue Status</div>
+                    <div class="small text-white mt-1 font-weight-semibold">Broker: Redis (Port 6379)</div>
+                </div>
+                <i class="bi bi-cpu text-primary fs-3"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Analyses Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-secondary">
+                <div class="card-header border-secondary bg-dark d-flex justify-content-between align-items-center py-3">
+                    <h5 class="card-title text-white mb-0">Recent Analysis Jobs</h5>
+                    <a href="{% url 'analysis_history' %}" class="btn btn-sm btn-link text-decoration-none text-gradient-cyan">View History <i class="bi bi-arrow-right"></i></a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-dark mb-0">
+                        <thead>
+                            <tr>
+                                <th>Repository Name</th>
+                                <th>Stage</th>
+                                <th>Commit Hash</th>
+                                <th>Duration</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if recent_jobs %}
+                                {% for job in recent_jobs %}
+                                    <tr>
+                                        <td>
+                                            <div class="font-weight-semibold text-white">{{ job.repository.name }}</div>
+                                            <div class="small text-muted text-truncate" style="max-width: 300px;">{{ job.repository.url }}</div>
+                                        </td>
+                                        <td class="small">{{ job.get_current_stage_display }}</td>
+                                        <td>
+                                            {% if job.commit_hash %}
+                                                <code class="small text-gradient-cyan">{{ job.commit_hash|slice:":7" }}</code>
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="small">
+                                            {% if job.status == 'COMPLETED' or job.status == 'FAILED' %}
+                                                {{ job.duration_seconds }}s
+                                            {% else %}
+                                                <span class="text-gradient-cyan"><i class="bi bi-clock-history spin-icon"></i> Active</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span class="badge-status {% if job.status == 'PENDING' %}badge-pending{% elif job.status == 'RUNNING' %}badge-running{% elif job.status == 'COMPLETED' %}badge-completed{% else %}badge-failed{% endif %}">
+                                                {{ job.status }}
+                                            </span>
+                                        </td>
+                                        <td class="text-end">
+                                            {% if job.status == 'COMPLETED' %}
+                                                <a href="{% url 'analysis_detail' job.id %}" class="btn btn-sm btn-outline-cyan px-3 rounded-pill me-1"><i class="bi bi-bar-chart-fill"></i> View Report</a>
+                                            {% elif job.status == 'FAILED' %}
+                                                <a href="{% url 'reanalyze' job.id %}" class="btn btn-sm btn-outline-warning px-3 rounded-pill me-1"><i class="bi bi-arrow-counterclockwise"></i> Retry</a>
+                                            {% else %}
+                                                <a href="{% url 'job_details' job.id %}" class="btn btn-sm btn-outline-light px-3 rounded-pill me-1"><i class="bi bi-eye"></i> Track</a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-5 text-muted">
+                                        <i class="bi bi-folder2-open fs-2 d-block mb-2"></i>
+                                        No analysis jobs found. Get started by submitting a repository.
+                                        <div class="mt-3">
+                                            <a href="{% url 'analysis_new' %}" class="btn btn-primary-gradient btn-sm px-4 rounded-pill">Analyze Your First Repo</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Live update stats using Django Channels
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socketUrl = `${protocol}//${window.location.host}/ws/dashboard/`;
+    const statsSocket = new WebSocket(socketUrl);
+
+    statsSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        if (data.action === 'refresh') {
+            // Trigger partial template update using HTMX
+            htmx.ajax('GET', window.location.pathname, {
+                target: '#dashboard-container',
+                select: '#dashboard-container'
+            });
+        }
+    };
+
+    statsSocket.onclose = function(e) {
+        console.warn('Dashboard statistics socket closed. Reconnecting in 3 seconds...');
+        setTimeout(function() {
+            window.location.reload();
+        }, 3000);
+    };
+</script>
+<style>
+    .btn-outline-cyan {
+        color: #06b6d4;
+        border-color: #06b6d4;
+    }
+    .btn-outline-cyan:hover {
+        background-color: #06b6d4;
+        color: #fff;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .spin-icon {
+        display: inline-block;
+        animation: spin 2s linear infinite;
+    }
+</style>
+{% endblock %}
