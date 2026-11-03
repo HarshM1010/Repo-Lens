@@ -426,12 +426,9 @@ Repolens demonstrates several backend and distributed-systems concepts:
 
 ## 👨‍💻 Author
 
-**Siddhartha Mitra**
+**Harsh Mane**
 
-B.Tech — Computer Science & Engineering
+B.Tech — Electronics and Telecommunication Engineering
 IIIT Bhubaneswar
-
-[GitHub](https://github.com/Siddhartha0790) 
-
 ---
 
